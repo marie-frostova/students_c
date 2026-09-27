@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Визуализация отладки: стек, куча, статическая область</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Fira Code', monospace;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
+            background: #1e1e2f;
+            color: #ddd;
+            padding: 10px;
+        }
+        .debugger-container {
+            display: flex;
+            gap: 14px;
+            width: 92%;
+            height: 100%;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        .code-panel {
+            flex: 1;
+            min-width: 0;
+            background: #2a2a3c;
+            border-radius: 14px;
+            padding: 12px 14px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .code-header h2 {
+            margin: 0;
+            font-weight: 400;
+            color: #b3b3ff;
+            letter-spacing: 1px;
+            font-size: 16px;
+        }
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: nowrap;
+        }
+        button {
+            background: #3e3e5e;
+            border: none;
+            color: #eee;
+            padding: 5px 12px;
+            border-radius: 30px;
+            font-weight: 500;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            white-space: nowrap;
+        }
+        button:hover { background: #5a5a8a; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .step-counter {
+            background: #1e1e2f;
+            padding: 4px 10px;
+            border-radius: 30px;
+            font-size: 12px;
+            color: #aaf0d1;
+            border: 1px solid #3e3e5e;
+            white-space: nowrap;
+        }
+        pre {
+            background: #1b1b2a;
+            padding: 8px 0;
+            border-radius: 10px;
+            overflow: auto;
+            font-size: 12.5px;
+            line-height: 1.45;
+            border: 1px solid #3e3e5e;
+            margin: 0;
+            flex: 1;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            white-space: pre;
+            min-height: 0;
+        }
+        pre .line {
+            display: block;
+            padding: 0 12px;
+        }
+        pre .line.highlight {
+            background: #3a3a6a;
+            box-shadow: inset 4px 0 0 0 #aaf0d1;
+        }
+        .step-scrollbar-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+            flex-shrink: 0;
+        }
+        .step-scrollbar-label {
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+        }
+        .step-scrollbar {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #1b1b2a;
+            outline: none;
+            cursor: pointer;
+            border: 1px solid #3e3e5e;
+        }
+        .step-scrollbar::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #aaf0d1;
+            cursor: pointer;
+            box-shadow: 0 0 0 3px #2a2a3c, 0 0 0 4px #aaf0d1;
+            transition: 0.15s;
+        }
+        .step-scrollbar::-webkit-slider-thumb:hover {
+            background: #7de0b8;
+            transform: scale(1.1);
+        }
+        .step-scrollbar::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #aaf0d1;
+            cursor: pointer;
+            border: 3px solid #2a2a3c;
+        }
+        .step-scrollbar::-moz-range-track {
+            height: 8px;
+            border-radius: 4px;
+            background: #1b1b2a;
+        }
+
+        /* ============ ПРАВАЯ ПАНЕЛЬ ============ */
+        .memory-panel-wrapper {
+            position: relative;
+            flex: 0.8;
+            min-width: 0;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+            gap: 0;
+        }
+        .memory-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+            height: 100%;
+            min-width: 0;
+            font-size: 13.5px;
+        }
+        /* колонка для стрелок справа */
+        .arrow-rail {
+            flex: 0 0 70px;
+            position: relative;
+            pointer-events: none;
+        }
+        .memory-section {
+            background: #2a2a3c;
+            border-radius: 14px;
+            padding: 8px 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            border-left: 5px solid;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+            position: relative;
+        }
+        .static-area { border-left-color: #f7b731; flex: 1 1 30%; }
+        .stack-area  { border-left-color: #4b7bec; flex: 1 1 42%; }
+        .heap-area   { border-left-color: #20bf6b; flex: 1 1 28%; }
+
+        .memory-section h3 {
+            margin: 0 0 6px 0;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14.5px;
+            flex-shrink: 0;
+        }
+        .badge {
+            background: #3e3e5e;
+            border-radius: 40px;
+            padding: 1px 7px;
+            font-size: 11.5px;
+            font-weight: 400;
+            color: #ccc;
+        }
+        .memory-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 13px;
+            flex: 1;
+            min-height: 0;
+            overflow: visible;
+        }
+        .stack-grid {
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 4px;
+            font-size: 13px;
+            flex: 1;
+            min-height: 0;
+            overflow: visible;
+            justify-content: flex-start;
+        }
+        .stack-top-label {
+            font-size: 10.5px;
+            color: #4b7bec;
+            text-align: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            opacity: 0.7;
+            flex-shrink: 0;
+        }
+        .mem-item {
+            background: #1e1e2f;
+            padding: 5px 9px;
+            border-radius: 7px;
+            display: flex;
+            justify-content: space-between;
+            border: 1px solid #3e3e5e;
+            gap: 6px;
+            position: relative;
+        }
+        .mem-item.empty {
+            color: #777;
+            font-style: italic;
+            justify-content: center;
+            border-style: dashed;
+        }
+        .mem-addr {
+            color: #aaf0d1;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .mem-value {
+            color: #f7b731;
+            font-weight: 600;
+            word-break: break-all;
+            text-align: right;
+        }
+        .mem-label {
+            color: #aaa;
+            font-size: 11.5px;
+            margin-left: 4px;
+        }
+        .stack-frame {
+            background: #1e1e2f;
+            border-radius: 7px;
+            padding: 6px 9px;
+            border: 1px solid #3e3e5e;
+            position: relative;
+        }
+        .stack-frame.top {
+            border-color: #4b7bec;
+            box-shadow: 0 0 0 1px rgba(75, 123, 236, 0.4);
+        }
+        .stack-frame-title {
+            color: #4b7bec;
+            font-weight: 600;
+            margin-bottom: 3px;
+            border-bottom: 1px dashed #3e3e5e;
+            padding-bottom: 2px;
+            font-size: 12.5px;
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+        }
+        .var-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12.5px;
+            padding: 1px 0;
+            gap: 6px;
+            position: relative;
+        }
+        .var-name { color: #ccc; }
+        .var-val  { color: #f7b731; font-weight: 600; text-align: right; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1b1b2a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #3e3e5e; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #5a5a8a; }
+
+        /* ============ СТРЕЛКИ ============ */
+        .arrow-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            overflow: visible;
+        }
+        .arrow-overlay path {
+            fill: none;
+            stroke: #ff7ac6;
+            stroke-width: 1.8;
+            stroke-dasharray: 4 3;
+            opacity: 0.95;
+            filter: drop-shadow(0 0 3px rgba(255,122,198,0.6));
+            stroke-linejoin: miter;
+            stroke-linecap: butt;
+        }
+        .arrow-overlay marker path {
+            fill: #ff7ac6;
+            stroke: none;
+        }
+    </style>
+</head>
+<body>
+<div class="debugger-container">
+    <div class="code-panel">
+        <div class="code-header">
+            <h2>Debug Visualizer</h2>
+            <div class="controls">
+                <button id="prevBtn" disabled>Назад</button>
+                <button id="nextBtn">Вперед</button>
+                <button id="resetBtn">Сброс</button>
+                <span class="step-counter" id="stepCounter">Шаг 0 / 0</span>
+            </div>
+        </div>
+        <pre id="codeDisplay"></pre>
+        <div class="step-scrollbar-container">
+            <span class="step-scrollbar-label">Шаг:</span>
+            <input type="range" id="stepSlider" class="step-scrollbar" min="0" max="0" value="0" step="1">
+        </div>
+    </div>
+
+    <div class="memory-panel-wrapper">
+        <svg id="arrowOverlay" class="arrow-overlay"></svg>
+        <div class="memory-panel">
+            <div class="memory-section static-area">
+                <h3>Статическая область</h3>
+                <div class="memory-grid" id="staticMemory"></div>
+            </div>
+            <div class="memory-section stack-area">
+                <h3>Стек</h3>
+                <div class="stack-grid" id="stackMemory"></div>
+            </div>
+            <div class="memory-section heap-area">
+                <h3>Куча</h3>
+                <div class="memory-grid" id="heapMemory"></div>
+            </div>
+        </div>
+        <div class="arrow-rail"></div>
+    </div>
+</div>
+
+<script>
+    // ================== ИСХОДНЫЙ КОД ==================
+    const sourceCodeLines = [
+        '#include <stdio.h>',
+        '#include <stdlib.h>',
+        '#define ARRAY_SIZE 3',
+        '',
+        'int global_variable;',
+        'int global_array[ARRAY_SIZE];',
+        '',
+        'void fun1(int* y) {',
+        '    *y = *y + 1;',
+        '}',
+        '',
+        'int fun2(int x) {',
+        '    fun1(&x);',
+        '    return x * x;',
+        '}',
+        '',
+        'void fun3(int* arr, int size) {',
+        '    static int cnt;',
+        '    for (int i = 0; i < size; i++) {',
+        '        arr[i] = arr[i] + cnt;',
+        '    }',
+        '    cnt++;',
+        '}',
+        '',
+        'void fun4(int** ptr) {',
+        '  *ptr = (int*)malloc(ARRAY_SIZE * sizeof(int));',
+        '}',
+        '',
+        'int main() {',
+        '    int local_variable = 1;',
+        '    fun2(local_variable);',
+        '',
+        '    int local_array[ARRAY_SIZE] = { 1 };',
+        '',
+        '    int* malloc_array;',
+        '    fun4(&malloc_array);',
+        '    for (int i = 0; i < ARRAY_SIZE; i++) {',
+        '        malloc_array[i] = i + 1;',
+        '    }',
+        '',
+        '    fun3(malloc_array, ARRAY_SIZE);',
+        '    fun3(local_array, ARRAY_SIZE);',
+        '    fun3(global_array, ARRAY_SIZE);',
+        '',
+        '    free(malloc_array);',
+        '',
+        '    char* str = "Hello, world!";',
+        '    printf("%s\\n", str);',
+        '',
+        '    return 0;',
+        '}'
+    ];
+
+    // ================== ШАГИ ==================
+    const steps = [];
+    function makeStep(line, staticData, stackData, heapData) {
+        return {
+            line,
+            static: JSON.parse(JSON.stringify(staticData)),
+            stack: JSON.parse(JSON.stringify(stackData)),
+            heap: JSON.parse(JSON.stringify(heapData))
+        };
+    }
+
+    let staticMem = [
+        { name: 'global_variable', value: '0', addr: '0x1000', id: 'static-global_variable' },
+        { name: 'global_array[0]', value: '0', addr: '0x1004', id: 'static-global_array-0' },
+        { name: 'global_array[1]', value: '0', addr: '0x1008', id: 'static-global_array-1' },
+        { name: 'global_array[2]', value: '0', addr: '0x100C', id: 'static-global_array-2' },
+        { name: 'static cnt (fun3)', value: '0', addr: '0x1010', id: 'static-cnt' }
+    ];
+    let stackMem = [];
+    let heapMem = [];
+
+    stackMem = [{ func: 'main', addr: '0x7ffd0000', vars: [], id: 'frame-main' }];
+    steps.push(makeStep(28, staticMem, stackMem, heapMem));
+
+    stackMem[0].vars.push({ name: 'local_variable', value: '1', id: 'var-main-local_variable' });
+    steps.push(makeStep(29, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun2', addr: '0x7ffd0010', vars: [
+        { name: 'x (параметр)', value: '1', id: 'var-fun2-x' },
+        { name: 'возврат', value: '?', id: 'var-fun2-ret' }
+    ], id: 'frame-fun2' });
+    steps.push(makeStep(30, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun1', addr: '0x7ffd0020', vars: [
+        { name: 'y (указатель)', value: '&x (0x7ffd0010)', id: 'var-fun1-y', pointsTo: 'var-fun2-x' }
+    ], id: 'frame-fun1' });
+    steps.push(makeStep(12, staticMem, stackMem, heapMem));
+
+    let fun2Frame = stackMem.find(f => f.func === 'fun2');
+    if (fun2Frame) fun2Frame.vars = fun2Frame.vars.map(v => v.name.startsWith('x') ? { name: 'x (параметр)', value: '2', id: 'var-fun2-x' } : v);
+    steps.push(makeStep(8, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(9, staticMem, stackMem, heapMem));
+
+    if (fun2Frame) fun2Frame.vars = fun2Frame.vars.map(v => v.name === 'возврат' ? { name: 'возврат', value: '4', id: 'var-fun2-ret' } : v);
+    steps.push(makeStep(13, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(14, staticMem, stackMem, heapMem));
+
+    let mainFrame = stackMem[0];
+    mainFrame.vars.push({ name: 'local_array[0]', value: '1', id: 'var-main-local_array-0' });
+    mainFrame.vars.push({ name: 'local_array[1]', value: '0', id: 'var-main-local_array-1' });
+    mainFrame.vars.push({ name: 'local_array[2]', value: '0', id: 'var-main-local_array-2' });
+    steps.push(makeStep(32, staticMem, stackMem, heapMem));
+
+    mainFrame.vars.push({ name: 'malloc_array (указатель)', value: 'не инициализирован', id: 'var-main-malloc_array', isNull: true });
+    steps.push(makeStep(34, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun4', addr: '0x7ffd0030', vars: [
+        { name: 'ptr (указатель на указатель)', value: '&malloc_array', id: 'var-fun4-ptr', pointsTo: 'var-main-malloc_array' }
+    ], id: 'frame-fun4' });
+    steps.push(makeStep(35, staticMem, stackMem, heapMem));
+
+    let heapBlockAddr = '0x2000';
+    let heapBlockId = 'heap-block-0x2000';
+    heapMem.push({ addr: heapBlockAddr, size: 3, values: ['?', '?', '?'], id: heapBlockId });
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'malloc_array (указатель)' ? { name: 'malloc_array (указатель)', value: heapBlockAddr, id: 'var-main-malloc_array', isHeapPtr: true, pointsTo: heapBlockId } : v);
+    let fun4Frame = stackMem.find(f => f.func === 'fun4');
+    if (fun4Frame) fun4Frame.vars = fun4Frame.vars.map(v => v.name === 'ptr (указатель на указатель)' ? { name: 'ptr (указатель на указатель)', value: '&malloc_array -> ' + heapBlockAddr, id: 'var-fun4-ptr' } : v);
+    steps.push(makeStep(25, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(26, staticMem, stackMem, heapMem));
+
+    mainFrame.vars.push({ name: 'i (цикл)', value: '0', id: 'var-main-i' });
+    steps.push(makeStep(36, staticMem, stackMem, heapMem));
+
+    heapMem[0].values[0] = '1';
+    steps.push(makeStep(37, staticMem, stackMem, heapMem));
+
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '1', id: 'var-main-i' } : v);
+    steps.push(makeStep(36, staticMem, stackMem, heapMem));
+
+    heapMem[0].values[1] = '2';
+    steps.push(makeStep(37, staticMem, stackMem, heapMem));
+
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '2', id: 'var-main-i' } : v);
+    steps.push(makeStep(36, staticMem, stackMem, heapMem));
+
+    heapMem[0].values[2] = '3';
+    steps.push(makeStep(37, staticMem, stackMem, heapMem));
+
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '3', id: 'var-main-i' } : v);
+    steps.push(makeStep(36, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun3', addr: '0x7ffd0040', vars: [
+        { name: 'arr (указатель)', value: '0x2000', id: 'var-fun3-arr', pointsTo: 'heap-block-0x2000' },
+        { name: 'size', value: '3', id: 'var-fun3-size' },
+        { name: 'i (цикл)', value: '?', id: 'var-fun3-i' },
+        { name: 'cnt (static)', value: '0 (в статической области)', id: 'var-fun3-cnt' }
+    ], id: 'frame-fun3-1'});
+    steps.push(makeStep(40, staticMem, stackMem, heapMem));
+
+    let fun3Frame = stackMem.find(f => f.func === 'fun3');
+    if (fun3Frame) fun3Frame.vars = fun3Frame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '0', id: 'var-fun3-i' } : v);
+    steps.push(makeStep(18, staticMem, stackMem, heapMem));
+
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame) fun3Frame.vars = fun3Frame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '1', id: 'var-fun3-i' } : v);
+    steps.push(makeStep(18, staticMem, stackMem, heapMem));
+
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame) fun3Frame.vars = fun3Frame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '2', id: 'var-fun3-i' } : v);
+    steps.push(makeStep(18, staticMem, stackMem, heapMem));
+
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame) fun3Frame.vars = fun3Frame.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '3', id: 'var-fun3-i' } : v);
+    steps.push(makeStep(18, staticMem, stackMem, heapMem));
+
+    staticMem = staticMem.map(v => v.name.includes('static cnt') ? { ...v, value: '1' } : v);
+    if (fun3Frame) fun3Frame.vars = fun3Frame.vars.map(v => v.name === 'cnt (static)' ? { name: 'cnt (static)', value: '1 (в статической области)', id: 'var-fun3-cnt' } : v);
+    steps.push(makeStep(21, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(22, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun3', addr: '0x7ffd0050', vars: [
+        { name: 'arr (указатель)', value: '&local_array', id: 'var-fun3-arr', pointsTo: 'var-main-local_array-0' },
+        { name: 'size', value: '3', id: 'var-fun3-size' },
+        { name: 'i (цикл)', value: '?', id: 'var-fun3-i' },
+        { name: 'cnt (static)', value: '1 (в статической области)', id: 'var-fun3-cnt' }
+    ], id: 'frame-fun3-2'});
+    steps.push(makeStep(41, staticMem, stackMem, heapMem));
+
+    let fun3Frame2 = stackMem.find(f => f.func === 'fun3');
+    if (fun3Frame2) fun3Frame2.vars = fun3Frame2.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '0', id: 'var-fun3-i' } : v);
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'local_array[0]' ? { name: 'local_array[0]', value: '2', id: 'var-main-local_array-0' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame2) fun3Frame2.vars = fun3Frame2.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '1', id: 'var-fun3-i' } : v);
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'local_array[1]' ? { name: 'local_array[1]', value: '1', id: 'var-main-local_array-1' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame2) fun3Frame2.vars = fun3Frame2.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '2', id: 'var-fun3-i' } : v);
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'local_array[2]' ? { name: 'local_array[2]', value: '1', id: 'var-main-local_array-2' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    staticMem = staticMem.map(v => v.name.includes('static cnt') ? { ...v, value: '2' } : v);
+    if (fun3Frame2) fun3Frame2.vars = fun3Frame2.vars.map(v => v.name === 'cnt (static)' ? { name: 'cnt (static)', value: '2 (в статической области)', id: 'var-fun3-cnt' } : v);
+    steps.push(makeStep(21, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(22, staticMem, stackMem, heapMem));
+
+    stackMem.push({ func: 'fun3', addr: '0x7ffd0060', vars: [
+        { name: 'arr (указатель)', value: '&global_array', id: 'var-fun3-arr', pointsTo: 'static-global_array-0' },
+        { name: 'size', value: '3', id: 'var-fun3-size' },
+        { name: 'i (цикл)', value: '?', id: 'var-fun3-i' },
+        { name: 'cnt (static)', value: '2 (в статической области)', id: 'var-fun3-cnt' }
+    ], id: 'frame-fun3-3'});
+    steps.push(makeStep(42, staticMem, stackMem, heapMem));
+
+    let fun3Frame3 = stackMem.find(f => f.func === 'fun3');
+    if (fun3Frame3) fun3Frame3.vars = fun3Frame3.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '0', id: 'var-fun3-i' } : v);
+    staticMem = staticMem.map(v => v.name === 'global_array[0]' ? { ...v, value: '2' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame3) fun3Frame3.vars = fun3Frame3.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '1', id: 'var-fun3-i' } : v);
+    staticMem = staticMem.map(v => v.name === 'global_array[1]' ? { ...v, value: '2' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    if (fun3Frame3) fun3Frame3.vars = fun3Frame3.vars.map(v => v.name === 'i (цикл)' ? { name: 'i (цикл)', value: '2', id: 'var-fun3-i' } : v);
+    staticMem = staticMem.map(v => v.name === 'global_array[2]' ? { ...v, value: '2' } : v);
+    steps.push(makeStep(19, staticMem, stackMem, heapMem));
+
+    staticMem = staticMem.map(v => v.name.includes('static cnt') ? { ...v, value: '3' } : v);
+    if (fun3Frame3) fun3Frame3.vars = fun3Frame3.vars.map(v => v.name === 'cnt (static)' ? { name: 'cnt (static)', value: '3 (в статической области)', id: 'var-fun3-cnt' } : v);
+    steps.push(makeStep(21, staticMem, stackMem, heapMem));
+
+    stackMem.pop();
+    steps.push(makeStep(22, staticMem, stackMem, heapMem));
+
+    heapMem = [];
+    mainFrame.vars = mainFrame.vars.map(v => v.name === 'malloc_array (указатель)' ? { name: 'malloc_array (указатель)', value: '0x2000 (освобожден)', id: 'var-main-malloc_array', isNull: true } : v);
+    steps.push(makeStep(44, staticMem, stackMem, heapMem));
+
+    mainFrame.vars.push({ name: 'str (указатель)', value: '&"Hello, world!"', id: 'var-main-str', pointsTo: 'static-str-literal' });
+    staticMem.push({ name: 'строковый литерал', value: '"Hello, world!"', addr: '0x3000', id: 'static-str-literal' });
+    steps.push(makeStep(46, staticMem, stackMem, heapMem));
+
+    steps.push(makeStep(47, staticMem, stackMem, heapMem));
+    steps.push(makeStep(49, staticMem, stackMem, heapMem));
+
+    stackMem = [];
+    steps.push(makeStep(50, staticMem, stackMem, heapMem));
+
+    // ================== ОТРИСОВКА ==================
+    const codeDisplay = document.getElementById('codeDisplay');
+    const stepCounter = document.getElementById('stepCounter');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const staticMemoryDiv = document.getElementById('staticMemory');
+    const stackMemoryDiv = document.getElementById('stackMemory');
+    const heapMemoryDiv = document.getElementById('heapMemory');
+    const stepSlider = document.getElementById('stepSlider');
+
+    let currentStepIndex = 0;
+
+    function renderCode(highlightLine) {
+        let html = '';
+        sourceCodeLines.forEach((line, idx) => {
+            const lineNum = (idx + 1).toString().padStart(2, ' ');
+            const cls = (idx === highlightLine) ? 'line highlight' : 'line';
+            html += `<span class="${cls}">${lineNum}: ${escapeHtml(line)}</span>`;
+        });
+        codeDisplay.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function renderStatic(mem) {
+        if (!mem || mem.length === 0) {
+            staticMemoryDiv.innerHTML = '<div class="mem-item empty">нет данных</div>';
+            return;
+        }
+        let html = '';
+        mem.forEach(item => {
+            html += `<div class="mem-item" data-mem-id="${escapeHtml(item.id)}">
+                <span class="mem-addr">${escapeHtml(item.addr)}</span>
+                <span><span class="mem-label">${escapeHtml(item.name)}</span> <span class="mem-value">${escapeHtml(item.value)}</span></span>
+            </div>`;
+        });
+        staticMemoryDiv.innerHTML = html;
+    }
+
+    function renderStack(stack) {
+        if (!stack || stack.length === 0) {
+            stackMemoryDiv.innerHTML = '<div class="mem-item empty">стек пуст</div>';
+            return;
+        }
+        let html = '';
+        stack.forEach((frame, idx) => {
+            const isTop = (idx === stack.length - 1);
+            html += `<div class="stack-frame ${isTop ? 'top' : ''}">`;
+            html += `<div class="stack-frame-title"><span>${escapeHtml(frame.func)}</span><span style="font-weight:400;color:#888;font-size:10.5px;">${escapeHtml(frame.addr)}</span></div>`;
+            if (frame.vars && frame.vars.length) {
+                frame.vars.forEach(v => {
+                    const pointsToAttr = v.pointsTo ? ` data-points-to="${escapeHtml(v.pointsTo)}"` : '';
+                    html += `<div class="var-row" data-mem-id="${escapeHtml(v.id)}"${pointsToAttr}>
+                        <span class="var-name">${escapeHtml(v.name)}</span>
+                        <span class="var-val">${escapeHtml(v.value)}</span>
+                    </div>`;
+                });
+            } else {
+                html += `<div class="var-row" style="color:#777;font-style:italic;">нет локальных переменных</div>`;
+            }
+            html += `</div>`;
+        });
+        stackMemoryDiv.innerHTML = html;
+    }
+
+    function renderHeap(heap) {
+        if (!heap || heap.length === 0) {
+            heapMemoryDiv.innerHTML = '<div class="mem-item empty">куча пуста</div>';
+            return;
+        }
+        let html = '';
+        heap.forEach(block => {
+            html += `<div class="mem-item" data-mem-id="${escapeHtml(block.id)}" style="flex-direction:column;align-items:flex-start;gap:3px;">
+                <div style="display:flex;justify-content:space-between;width:100%;">
+                    <span class="mem-addr">${escapeHtml(block.addr)}</span>
+                    <span style="color:#aaa;font-size:10.5px;">размер: ${block.size} int</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;">`;
+            block.values.forEach((val, i) => {
+                html += `<span style="background:#1b1b2a;padding:2px 7px;border-radius:10px;border:1px solid #3e3e5e;font-size:11.5px;">
+                    [${i}] = <span class="mem-value">${escapeHtml(val)}</span>
+                </span>`;
+            });
+            html += `</div></div>`;
+        });
+        heapMemoryDiv.innerHTML = html;
+    }
+
+    // ================== СТРЕЛКИ ==================
+    const arrowOverlay = document.getElementById('arrowOverlay');
+    const memoryWrapper = document.querySelector('.memory-panel-wrapper');
+
+    function ensureArrowMarker() {
+        if (!arrowOverlay.querySelector('#arrowHead')) {
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowHead');
+            // квадратный наконечник (треугольник с прямыми углами, без скруглений)
+            marker.setAttribute('viewBox', '0 0 10 10');
+            marker.setAttribute('refX', '9');
+            marker.setAttribute('refY', '5');
+            marker.setAttribute('markerWidth', '7');
+            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('orient', 'auto-start-reverse');
+            marker.setAttribute('markerUnits', 'userSpaceOnUse');
+            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            p.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 2 5 Z');
+            marker.appendChild(p);
+            defs.appendChild(marker);
+            arrowOverlay.appendChild(defs);
+        }
+    }
+
+    function drawArrows() {
+        if (!arrowOverlay || !memoryWrapper) return;
+        arrowOverlay.innerHTML = '';
+        ensureArrowMarker();
+
+        const wrapperRect = memoryWrapper.getBoundingClientRect();
+        const svgW = wrapperRect.width;
+        const svgH = wrapperRect.height;
+        arrowOverlay.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+        arrowOverlay.setAttribute('width', svgW);
+        arrowOverlay.setAttribute('height', svgH);
+
+        // правый край панели памяти (до колонки стрелок)
+        const panel = memoryWrapper.querySelector('.memory-panel');
+        const panelRect = panel.getBoundingClientRect();
+        const railLeftX = panelRect.right - wrapperRect.left; // начало колонки стрелок
+
+        const sources = Array.from(memoryWrapper.querySelectorAll('[data-points-to]'));
+
+        // Каждой стрелке — своя вертикальная дорожка в правой колонке,
+        // чтобы линии не сливались.
+        const laneStep = 6; // расстояние между дорожками
+        sources.forEach((src, laneIdx) => {
+            const targetId = src.getAttribute('data-points-to');
+            if (!targetId) return;
+            const target = memoryWrapper.querySelector(`[data-mem-id="${CSS.escape(targetId)}"]`);
+            if (!target) return;
+
+            const sRect = src.getBoundingClientRect();
+            const tRect = target.getBoundingClientRect();
+
+            // Стрелки рисуются только в правом рельсе, без линий поверх памяти.
+            const railEdgeX = railLeftX + 4;
+            const x1 = railEdgeX;
+            const y1 = sRect.top + sRect.height / 2 - wrapperRect.top;
+            const x2 = railEdgeX;
+            const y2 = tRect.top + tRect.height / 2 - wrapperRect.top;
+
+            // дорожка в правой колонке
+            const railX = railLeftX + 28 + laneIdx * laneStep;
+
+            // ортогональный («квадратный») путь:
+            // (x1,y1) -> вправо внутри рельса -> вверх/вниз -> обратно к его краю
+            const d = [
+                `M ${x1} ${y1}`,
+                `L ${railX} ${y1}`,
+                `L ${railX} ${y2}`,
+                `L ${x2} ${y2}`
+            ].join(' ');
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            path.setAttribute('marker-end', 'url(#arrowHead)');
+            arrowOverlay.appendChild(path);
+        });
+    }
+
+    // ================== ШАГИ UI ==================
+    function renderStep(index) {
+        const step = steps[index];
+        if (!step) return;
+
+        renderCode(step.line);
+        renderStatic(step.static);
+        renderStack(step.stack);
+        renderHeap(step.heap);
+
+        stepCounter.textContent = `Шаг ${index} / ${steps.length - 1}`;
+        prevBtn.disabled = (index === 0);
+        nextBtn.disabled = (index === steps.length - 1);
+
+        if (stepSlider.value != index) {
+            stepSlider.value = index;
+        }
+
+        requestAnimationFrame(drawArrows);
+    }
+
+    function goToStep(index) {
+        if (index < 0 || index >= steps.length) return;
+        currentStepIndex = index;
+        renderStep(index);
+    }
+
+    stepSlider.min = 0;
+    stepSlider.max = steps.length - 1;
+    stepSlider.value = 0;
+
+    goToStep(0);
+
+    nextBtn.addEventListener('click', () => goToStep(currentStepIndex + 1));
+    prevBtn.addEventListener('click', () => goToStep(currentStepIndex - 1));
+    resetBtn.addEventListener('click', () => goToStep(0));
+
+    stepSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        goToStep(val);
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            if (currentStepIndex < steps.length - 1) goToStep(currentStepIndex + 1);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            if (currentStepIndex > 0) goToStep(currentStepIndex - 1);
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            goToStep(0);
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            goToStep(steps.length - 1);
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        drawArrows();
+    });
+</script>
+</body>
+</html>
