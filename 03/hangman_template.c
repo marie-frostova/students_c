@@ -32,8 +32,8 @@ static const int COUNT_MEDIUM = sizeof(WORDS_MEDIUM) / sizeof(WORDS_MEDIUM[0]);
 static const int COUNT_HARD   = sizeof(WORDS_HARD)   / sizeof(WORDS_HARD[0]);
 
 /* UI */
-void        print_banner(void);
-Difficulty  ask_difficulty(void);
+void        print_banner();
+Difficulty  ask_difficulty();
 char        ask_letter(const GameState *g);
 
 /* Инициализация игры */
@@ -55,17 +55,17 @@ void        draw_word(const GameState *g);
 void        draw_used_letters(const GameState *g);
 
 /* main */
-int         main(void);
-void        play_round(void);
+int         main();
+void        play_round();
 
-void print_banner(void) {
+void print_banner() {
     printf("\n");
     printf("=================================\n");
     printf("         H A N G M A N           \n");
     printf("=================================\n");
 }
 
-Difficulty ask_difficulty(void) {
+Difficulty ask_difficulty() {
     //TODO
     return LEVEL_EASY;
 }
@@ -157,7 +157,7 @@ void render(const GameState *g, const char *message) {
     printf("---------------------------------\n");
 }
 
-void play_round(void) {
+void play_round() {
     Difficulty level = ask_difficulty();
 
     GameState game;
@@ -187,7 +187,7 @@ void play_round(void) {
     }
 }
 
-int main(void) {
+int main() {
     srand((unsigned)time(NULL));
     print_banner();
 
