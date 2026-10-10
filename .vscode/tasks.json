@@ -1,0 +1,19 @@
+{
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "make: build 05/main",
+            "command": "make",
+            "args": ["build/main"],
+            "options": {
+                "cwd": "${workspaceFolder}/05"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}

@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug 05/main",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/05/build/main",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/05",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "make: build 05/main"
+        }
+    ]
+}
