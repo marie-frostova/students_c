@@ -5,11 +5,11 @@
 /*======== HELPERS ========*/
 
 static inline size_t ring_add(size_t start, size_t steps, size_t cap) {
-    return (start + steps) % cap;
+    //TODO
 }
 
 static inline size_t ring_sub(size_t start, size_t steps, size_t cap) {
-    return (start + cap - steps) % cap;
+    //TODO
 }
 
 static int elem_copy(const dequeue* dq, const void* src, void** out) {
@@ -27,7 +27,8 @@ static void elem_destroy(const dequeue* dq, void* elem) {
 /*======== LIFECYCLE ========*/
 
 dequeue* dequeue_create(size_t capacity, copy_fn copy, destroy_fn destroy) {
-    //if(!capacity
+    //TODO
+    //check capacity!!!
 }
 
 void dequeue_destroy(dequeue* dq) {
