@@ -5,7 +5,17 @@
 #include "leetcode_list.h"
 
 struct ListNode* middleNode(struct ListNode* head) {
-    //TODO
+    int size = 0;
+    struct ListNode* current = head;
+    while (current){
+        size++;
+        current = current->next;
+    }
+    
+    for (int i = 0; i < size / 2; i++){
+        head = head->next;
+    }
+    return head;
 }
 
 void test_middle() {

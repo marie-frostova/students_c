@@ -13,5 +13,6 @@ int main() {
     test_cycle();
     test_remove_nth_from_end();
     test_merge();
+    test_cache();
     return 0;
 }

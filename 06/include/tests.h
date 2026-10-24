@@ -10,5 +10,6 @@ void test_remove_duplicates();
 void test_cycle();
 void test_remove_nth_from_end();
 void test_merge();
+void test_cache();
 
 #endif

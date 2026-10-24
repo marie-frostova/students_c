@@ -5,7 +5,21 @@
 #include "leetcode_list.h"
 
 struct ListNode* removeNthFromEnd(struct ListNode* head, int n) {
-    //TODO
+    n--;
+    
+    int size = 0;
+    for (struct ListNode* cur = head; cur != NULL; cur = cur->next){
+        ++size; 
+    }    
+    if (size-n == 1){
+        return head->next;
+    }
+    struct ListNode* cur = head;
+    for (int i=0; i< size-n-2; ++i){
+        cur = cur->next;
+    }
+    cur->next = cur->next->next;
+    return head;
 }
 
 void test_remove_nth_from_end() {
