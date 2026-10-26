@@ -4,9 +4,34 @@
 #include <assert.h>
 #include "leetcode_list.h"
 
+static void printlist(struct ListNode* head)
+{
+    while(head){
+        printf("%d ", head->val);
+        head = head->next;
+    }
+    printf("\n");
+};
+
 struct ListNode* deleteDuplicates(struct ListNode* head) {
-    //TODO
+    if (head == NULL){
+        return NULL;
+    }
+    printlist(head);
+    struct ListNode* current = head;
+    struct ListNode* step = head;
+    while(step->next){
+        if (current->val != step->val){
+            current->next = step;
+            current = step;
+        }
+        step = step->next;
+    }
+    current->next = NULL;
+    printlist(head);
+    return head;
 }
+
 
 void test_remove_duplicates() {
     printf("Testing remove duplicates\n");
